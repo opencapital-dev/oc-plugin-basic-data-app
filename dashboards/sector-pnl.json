@@ -1,0 +1,79 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Sector PnL",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "id": 2,
+      "gridPos": {
+        "h": 13,
+        "w": 24,
+        "x": 0,
+        "y": 1
+      },
+      "libraryPanel": {
+        "uid": "yfinance-app-sector-pnl-barchart",
+        "name": "yfinance-app/sector-pnl-barchart"
+      }
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 41,
+  "tags": [
+    "yfinance",
+    "sector",
+    "pnl"
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "portfolio_id",
+        "label": "Portfolio",
+        "type": "query",
+        "datasource": {
+          "type": "core-datasource",
+          "uid": "core-datasource"
+        },
+        "query": {
+          "refId": "V",
+          "source": "@bind(rows=\"portfolios{}\")\n@metric(output=\"table\")\ndef passthrough(rows):\n    return rows\n"
+        },
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "multi": false,
+        "includeAll": false,
+        "options": [],
+        "current": {}
+      },
+      {
+        "name": "base_currency",
+        "type": "textbox",
+        "current": {
+          "text": "GBP",
+          "value": "GBP"
+        },
+        "query": "GBP",
+        "label": "Base ccy"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-90d",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "title": "Sector PnL",
+  "uid": "yfinance-sector-pnl"
+}
