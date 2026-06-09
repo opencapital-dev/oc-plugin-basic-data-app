@@ -89,7 +89,7 @@
         "type": "core-datasource",
         "uid": "core-datasource"
       },
-      "source": "PNL_COLS = [\"realized_equity_avg_base\", \"realized_forex_avg_base\",\n            \"unrealized_equity_avg_base\", \"unrealized_forex_avg_base\"]\n\n@bind(\n    positions=\"instrument{portfolio=\\\"$portfolio_id\\\", quantity != 0} @latest\",\n    sectors  =\"yfinance-app/classification{portfolio=\\\"$portfolio_id\\\"} @latest\",\n)\n@metric(output=\"table\")\ndef pnl_by_sector(positions, sectors):\n    df = positions.join(sectors.select(\"instrument_id\", \"sector\"),\n                        left_on=\"instrument\", right_on=\"instrument_id\", how=\"left\")\n    df = df.with_columns(\n        pl.sum_horizontal(pl.col(PNL_COLS)).alias(\"pnl\"),\n        pl.col(\"sector\").fill_null(\"Unclassified\"),\n    )\n    return (df.group_by(\"sector\").agg(pl.col(\"pnl\").sum())\n              .sort(\"pnl\", descending=True)\n              .rename({\"sector\": \"Sector\", \"pnl\": \"Current PnL\"}))\n"
+      "ref": "yfinance-app/sector_pnl"
     }
   ],
   "title": "Equity PnL by sector (${base_currency})",
