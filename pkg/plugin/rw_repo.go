@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/ignacioballester/oc-plugin-sdk/pluginclient"
+	"github.com/opencapital-dev/oc-plugin-sdk/pluginclient"
 )
 
 // RwFxPairUsedRow is the per-pair row from RisingWave's `fx_pairs_used`

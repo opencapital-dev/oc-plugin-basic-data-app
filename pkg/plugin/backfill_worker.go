@@ -8,7 +8,7 @@ import (
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend/log"
 
-	"github.com/ignacioballester/oc-plugin-sdk/pluginclient"
+	"github.com/opencapital-dev/oc-plugin-sdk/pluginclient"
 )
 
 // StartBackfillWorker runs the single backfill worker goroutine. Jobs are
