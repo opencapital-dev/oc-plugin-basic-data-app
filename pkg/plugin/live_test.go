@@ -1,8 +1,12 @@
 package plugin
 
 import (
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/opencapital-dev/oc-plugin-sdk/datakey"
+	yfmodels "github.com/wnjoon/go-yfinance/pkg/models"
 )
 
 func TestQuoteObservedMicros(t *testing.T) {
@@ -44,5 +48,78 @@ func TestQuoteObservedMicros(t *testing.T) {
 			result := quoteObservedMicros(tc.timeMs, tc.now)
 			tc.check(t, result, tc.timeMs, tc.now)
 		})
+	}
+}
+
+// TestPublishTickDataLogInsert drives publishTick through the fakeClient seam
+// and asserts: correct column order in the INSERT, namespace == prices.quote,
+// source == "yahoo_ws", and rw_key == datakey.DataKey(...).
+func TestPublishTickDataLogInsert(t *testing.T) {
+	const pluginID = "yfinance-app"
+	const portfolioID = "port-1"
+	const instrumentID = "instr-1"
+	const symbol = "AAPL"
+
+	fc := &fakeClient{}
+	sub := &LiveSubscriber{
+		client:   fc,
+		pluginID: pluginID,
+		current:  map[string]struct{}{},
+		bySymbol: map[string][]symbolTarget{
+			symbol: {{InstrumentID: instrumentID, PortfolioID: portfolioID}},
+		},
+		ticks: NewLiveTickMap(),
+	}
+
+	// Use a known ms timestamp so we can compute the expected observedAtUs.
+	const timeMs = int64(1_733_400_000_000)
+	observedAtUs := timeMs * 1_000
+	wantRwKey := datakey.DataKey(pluginID, QuoteNamespace, portfolioID, instrumentID, observedAtUs)
+
+	data := &yfmodels.PricingData{
+		ID:       symbol,
+		Time:     timeMs,
+		Price:    float32(150.0),
+		Bid:      float32(149.9),
+		Ask:      float32(150.1),
+		BidSize:  100,
+		AskSize:  100,
+		Currency: "USD",
+		Exchange: "XNAS",
+	}
+	sub.publishTick(data)
+
+	if len(fc.execCalls) != 1 {
+		t.Fatalf("expected 1 Exec call, got %d", len(fc.execCalls))
+	}
+	call := fc.execCalls[0]
+
+	// Verify INSERT targets data_log.
+	if !strings.Contains(call.sql, "INSERT INTO data_log") {
+		t.Errorf("SQL missing INSERT INTO data_log: %s", call.sql)
+	}
+
+	args := call.args
+	// Column order: source_namespace, source_id, portfolio_id, observedAtUs, source, plugin_id, trace_id, payload, rw_key
+	if args[0] != QuoteNamespace {
+		t.Errorf("arg[0] source_namespace = %v, want %v", args[0], QuoteNamespace)
+	}
+	if args[1] != instrumentID {
+		t.Errorf("arg[1] source_id = %v, want %v", args[1], instrumentID)
+	}
+	if args[2] != portfolioID {
+		t.Errorf("arg[2] portfolio_id = %v, want %v", args[2], portfolioID)
+	}
+	if args[3] != observedAtUs {
+		t.Errorf("arg[3] observed_at_us = %v, want %v", args[3], observedAtUs)
+	}
+	if args[4] != "yahoo_ws" {
+		t.Errorf("arg[4] source = %v, want yahoo_ws", args[4])
+	}
+	if args[5] != pluginID {
+		t.Errorf("arg[5] plugin_id = %v, want %v", args[5], pluginID)
+	}
+	if args[8] != wantRwKey {
+		t.Errorf("arg[8] rw_key = %v, want %v", args[8], wantRwKey)
 	}
 }
