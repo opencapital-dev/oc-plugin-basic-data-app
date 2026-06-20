@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/opencapital-dev/oc-plugin-sdk/datakey"
 )
@@ -72,6 +73,13 @@ func TestRwHelpers(t *testing.T) {
 	t.Run("rwMicros from int32", func(t *testing.T) {
 		if v := rwMicros(int32(999)); v != 999 {
 			t.Errorf("rwMicros(int32) = %d, want 999", v)
+		}
+	})
+	t.Run("rwMicros from time.Time", func(t *testing.T) {
+		ts := time.Date(2025, 1, 2, 3, 4, 5, 6000, time.UTC)
+		want := ts.UnixMicro()
+		if v := rwMicros(ts); v != want {
+			t.Errorf("rwMicros(time.Time) = %d, want %d", v, want)
 		}
 	})
 	t.Run("rwString nil", func(t *testing.T) {

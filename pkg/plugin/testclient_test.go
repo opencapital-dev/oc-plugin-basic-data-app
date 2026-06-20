@@ -10,7 +10,7 @@ type fakeClient struct {
 	execCalls   []fakeCall
 	queryCalls  []fakeCall
 	pgExecCalls []fakeCall
-	pgQuerCalls []fakeCall
+	pgQueryCalls []fakeCall
 
 	queryResult   pluginclient.Result
 	pgQueryResult pluginclient.Result
@@ -37,7 +37,7 @@ func (f *fakeClient) PGExec(ctx context.Context, sql string, args ...any) (int64
 }
 
 func (f *fakeClient) PGQuery(ctx context.Context, sql string, args ...any) (pluginclient.Result, error) {
-	f.pgQuerCalls = append(f.pgQuerCalls, fakeCall{sql: sql, args: args})
+	f.pgQueryCalls = append(f.pgQueryCalls, fakeCall{sql: sql, args: args})
 	return f.pgQueryResult, nil
 }
 

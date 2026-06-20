@@ -67,6 +67,34 @@ func TestGetTickerMappingNotFound(t *testing.T) {
 	}
 }
 
+func TestEnsureSchema(t *testing.T) {
+	fc := &fakeClient{}
+	app := makeAppWithFakeClient(fc)
+	app.ensureSchema(context.Background())
+
+	if len(fc.pgExecCalls) < 2 {
+		t.Fatalf("expected at least 2 PGExec calls (CREATE SCHEMA + CREATE TABLE ...), got %d", len(fc.pgExecCalls))
+	}
+
+	// First call must be CREATE SCHEMA IF NOT EXISTS yfinance.
+	firstSQL := fc.pgExecCalls[0].sql
+	if !strings.Contains(firstSQL, "CREATE SCHEMA IF NOT EXISTS yfinance") {
+		t.Errorf("first PGExec call missing CREATE SCHEMA IF NOT EXISTS yfinance: %s", firstSQL)
+	}
+
+	// One of the calls must create the instrument_ticker_mapping table.
+	foundTable := false
+	for _, c := range fc.pgExecCalls {
+		if strings.Contains(c.sql, "instrument_ticker_mapping") {
+			foundTable = true
+			break
+		}
+	}
+	if !foundTable {
+		t.Error("no PGExec call references instrument_ticker_mapping")
+	}
+}
+
 func TestListSubscribedTickerMappingsSQL(t *testing.T) {
 	fc := &fakeClient{
 		pgQueryResult: pluginclient.Result{
@@ -88,7 +116,7 @@ func TestListSubscribedTickerMappingsSQL(t *testing.T) {
 	if len(rows) != 1 {
 		t.Fatalf("expected 1 row, got %d", len(rows))
 	}
-	sql := fc.pgQuerCalls[0].sql
+	sql := fc.pgQueryCalls[0].sql
 	if !strings.Contains(sql, "WHERE subscribed") {
 		t.Errorf("SQL missing WHERE subscribed: %s", sql)
 	}
