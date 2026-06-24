@@ -206,6 +206,21 @@ func TestSetCanonicalIdentitySQL(t *testing.T) {
 	}
 }
 
+func TestEnsureSchemaCreatesAppSettings(t *testing.T) {
+	fc := &fakeClient{}
+	app := makeAppWithFakeClient(fc)
+	app.ensureSchema(context.Background())
+	var found bool
+	for _, c := range fc.pgExecCalls {
+		if strings.Contains(c.sql, "CREATE TABLE IF NOT EXISTS basic_data.app_settings") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected basic_data.app_settings table creation")
+	}
+}
+
 func TestSetCanonicalIdentityNoopOnEmpty(t *testing.T) {
 	fc := &fakeClient{pgQueryResult: mappingResult("AET.L")}
 	app := makeAppWithFakeClient(fc)

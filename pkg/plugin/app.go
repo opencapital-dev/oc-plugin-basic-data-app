@@ -125,6 +125,11 @@ func (a *App) ensureSchema(ctx context.Context) {
 		`CREATE OR REPLACE VIEW basic_data.gw_classification AS
   SELECT portfolio_id AS portfolio, instrument_id, updated_at AS ts, sector, subindustry AS industry
   FROM basic_data.instrument_ticker_mapping`,
+		`CREATE TABLE IF NOT EXISTS basic_data.app_settings (
+		    key        text PRIMARY KEY,
+		    value      text,
+		    updated_at timestamptz DEFAULT now()
+		)`,
 	}
 	for _, stmt := range stmts {
 		if _, err := a.client.PGExec(ctx, stmt); err != nil {
