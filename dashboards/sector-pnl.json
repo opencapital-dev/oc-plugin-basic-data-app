@@ -47,7 +47,7 @@
         },
         "query": {
           "refId": "V",
-          "source": "@bind(rows=\"portfolios{}\")\n@metric(output=\"table\")\ndef passthrough(rows):\n    return rows\n"
+          "source": "@bind(rows=pg(\"SELECT portfolio_id::text AS portfolio_id, COALESCE(attributes->>'name', portfolio_id::text) AS name FROM public.portfolios ORDER BY name\"))\n@metric(output=\"table\")\ndef passthrough(rows):\n    return rows\n"
         },
         "refresh": 1,
         "regex": "",
