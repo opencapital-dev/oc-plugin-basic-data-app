@@ -1,16 +1,23 @@
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { AppRootProps, PluginType } from '@grafana/data';
-import { render, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import App from './App';
 
 // Mock @grafana/runtime so the pages' getBackendSrv() / getDataSourceSrv()
 // don't reach into a non-existent Grafana stack during unit tests.
 jest.mock('@grafana/runtime', () => ({
   PluginPage: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  // Per-URL mock: instruments endpoints return arrays, settings returns an object.
   getBackendSrv: () => ({
-    get: jest.fn().mockResolvedValue([]),
+    get: jest.fn().mockImplementation((url: string) => {
+      if (url.includes('/settings')) {
+        return Promise.resolve({ fred_api_key_set: false, pollIntervalSec: 15, qps: 1, burst: 3, liveEnable: true, backfillEnable: true });
+      }
+      return Promise.resolve([]);
+    }),
     post: jest.fn().mockResolvedValue({}),
+    put: jest.fn().mockResolvedValue({ ok: true }),
   }),
   getAppEvents: () => ({ publish: jest.fn() }),
 }));
@@ -35,15 +42,24 @@ describe('Components/App', () => {
     } as unknown as AppRootProps;
   });
 
-  test('renders the Instruments route by default', async () => {
+  test('renders the Tickers route by default', async () => {
     const { queryAllByText } = render(
-      <MemoryRouter initialEntries={['/instruments']}>
+      <MemoryRouter initialEntries={['/tickers']}>
         <App {...props} />
       </MemoryRouter>
     );
-    // The Instruments page renders a heading or empty-state we can wait on.
-    await waitFor(() => expect(queryAllByText(/instruments/i).length).toBeGreaterThan(0), {
+    // The Tickers page renders a heading or empty-state we can wait on.
+    await waitFor(() => expect(queryAllByText(/instruments|tickers|Yahoo/i).length).toBeGreaterThan(0), {
       timeout: 2000,
     });
+  });
+
+  test('renders the Settings page at the settings route', async () => {
+    render(
+      <MemoryRouter initialEntries={['/settings']}>
+        <App {...props} />
+      </MemoryRouter>
+    );
+    expect(await screen.findByText(/FRED API key/i)).toBeInTheDocument();
   });
 });

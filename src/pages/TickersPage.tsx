@@ -56,7 +56,7 @@ function pairKey(row: InstrumentUsedRow): string {
  * case-insensitively (or is the only result), auto-set it. Operators can
  * always override via the dropdown.
  */
-export function InstrumentsPage() {
+export function TickersPage() {
   const styles = useStyles2(getStyles);
   const [rows, setRows] = useState<InstrumentUsedRow[] | null>(null);
   const [candidatesByPair, setCandidatesByPair] = useState<Record<string, CandidatesState>>({});
