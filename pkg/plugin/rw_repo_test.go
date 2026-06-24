@@ -11,13 +11,13 @@ import (
 
 func TestOhlcvDataLogInsert(t *testing.T) {
 	fc := &fakeClient{}
-	app := &App{client: fc, pluginID: "yfinance-app"}
+	app := &App{client: fc, pluginID: "basic-data-app"}
 	ctx := context.Background()
 
 	instrumentID := "instr-1"
 	portfolioID := "port-1"
 	observedAtUs := int64(1_700_000_000_000_000)
-	wantRwKey := datakey.DataKey("yfinance-app", OhlcvNamespace, portfolioID, instrumentID, observedAtUs)
+	wantRwKey := datakey.DataKey("basic-data-app", OhlcvNamespace, portfolioID, instrumentID, observedAtUs)
 
 	_, err := app.client.Exec(ctx, `
 		INSERT INTO data_log
@@ -44,7 +44,7 @@ func TestOhlcvDataLogInsert(t *testing.T) {
 
 func TestPurgeInstrumentPrices(t *testing.T) {
 	fc := &fakeClient{}
-	app := &App{client: fc, pluginID: "yfinance-app"}
+	app := &App{client: fc, pluginID: "basic-data-app"}
 	ctx := context.Background()
 
 	if err := app.PurgeInstrumentPrices(ctx, "instr-1", "port-1"); err != nil {

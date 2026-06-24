@@ -52,7 +52,7 @@ func NewApp(_ context.Context, settings backend.AppInstanceSettings) (instancemg
 		DecryptedSecureJSONData: settings.DecryptedSecureJSONData,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("yfinance: pluginclient init: %w", err)
+		return nil, fmt.Errorf("basic-data-app: pluginclient init: %w", err)
 	}
 
 	opts := AppOptions{
@@ -93,13 +93,21 @@ func NewApp(_ context.Context, settings backend.AppInstanceSettings) (instancemg
 	return app, nil
 }
 
-// ensureSchema creates the yfinance Postgres schema and supporting objects
+// ensureSchema creates the basic_data Postgres schema and supporting objects
 // idempotently. It is called once at startup in a goroutine; errors are logged
 // and surfaced so the caller can decide whether to abort.
+// The first statement renames the pre-0.2.0 yfinance schema to basic_data when
+// the old name still exists and the new name does not (no-op on fresh installs).
 func (a *App) ensureSchema(ctx context.Context) {
 	stmts := []string{
-		`CREATE SCHEMA IF NOT EXISTS yfinance`,
-		`CREATE TABLE IF NOT EXISTS yfinance.instrument_ticker_mapping (
+		// Idempotent rename of the pre-0.2.0 schema; no-op on fresh installs.
+		`DO $$ BEGIN
+		   IF EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'yfinance')
+		      AND NOT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'basic_data')
+		   THEN EXECUTE 'ALTER SCHEMA yfinance RENAME TO basic_data'; END IF;
+		 END $$`,
+		`CREATE SCHEMA IF NOT EXISTS basic_data`,
+		`CREATE TABLE IF NOT EXISTS basic_data.instrument_ticker_mapping (
     instrument_id VARCHAR NOT NULL,
     portfolio_id  VARCHAR NOT NULL,
     symbol        VARCHAR NOT NULL,
@@ -112,19 +120,19 @@ func (a *App) ensureSchema(ctx context.Context) {
     updated_by    VARCHAR,
     PRIMARY KEY (instrument_id, portfolio_id)
 )`,
-		`CREATE INDEX IF NOT EXISTS itm_symbol_idx ON yfinance.instrument_ticker_mapping(symbol)`,
-		`CREATE INDEX IF NOT EXISTS itm_updated_idx ON yfinance.instrument_ticker_mapping(updated_at)`,
-		`CREATE OR REPLACE VIEW yfinance.gw_classification AS
+		`CREATE INDEX IF NOT EXISTS itm_symbol_idx ON basic_data.instrument_ticker_mapping(symbol)`,
+		`CREATE INDEX IF NOT EXISTS itm_updated_idx ON basic_data.instrument_ticker_mapping(updated_at)`,
+		`CREATE OR REPLACE VIEW basic_data.gw_classification AS
   SELECT portfolio_id AS portfolio, instrument_id, updated_at AS ts, sector, subindustry AS industry
-  FROM yfinance.instrument_ticker_mapping`,
+  FROM basic_data.instrument_ticker_mapping`,
 	}
 	for _, stmt := range stmts {
 		if _, err := a.client.PGExec(ctx, stmt); err != nil {
-			log.DefaultLogger.Error("yfinance: ensureSchema failed", "err", err, "stmt", stmt[:min(len(stmt), 60)])
+			log.DefaultLogger.Error("basic-data-app: ensureSchema failed", "err", err, "stmt", stmt[:min(len(stmt), 60)])
 			return
 		}
 	}
-	log.DefaultLogger.Debug("yfinance: ensureSchema: schema ready")
+	log.DefaultLogger.Debug("basic-data-app: ensureSchema: schema ready")
 }
 
 func min(a, b int) int {
@@ -177,9 +185,9 @@ func (a *App) ensureRuntime(ctx context.Context) {
 	if a.options.LiveEnable {
 		live, err := NewLiveSubscriber(a.client, a.ticks, a.pluginID)
 		if err != nil {
-			log.DefaultLogger.Warn("yfinance: live ws init failed", "err", err)
+			log.DefaultLogger.Warn("basic-data-app: live ws init failed", "err", err)
 		} else if err := live.Start(context.Background()); err != nil {
-			log.DefaultLogger.Warn("yfinance: live ws start failed", "err", err)
+			log.DefaultLogger.Warn("basic-data-app: live ws start failed", "err", err)
 		} else {
 			a.live = live
 		}

@@ -90,7 +90,7 @@ func (a *App) UpsertTickerMapping(ctx context.Context, instrumentID, portfolioID
 
 	now := nowMicros()
 	_, err = a.client.PGExec(ctx, `
-		INSERT INTO yfinance.instrument_ticker_mapping
+		INSERT INTO basic_data.instrument_ticker_mapping
 			(instrument_id, portfolio_id, symbol, vendor_meta, subscribed, created_at, updated_at, updated_by)
 		VALUES ($1, $2, $3, $4::jsonb, TRUE, $5, $6, $7)
 		ON CONFLICT (instrument_id, portfolio_id) DO UPDATE
@@ -131,7 +131,7 @@ func (a *App) SetClassification(ctx context.Context, instrumentID, portfolioID s
 		return TickerMapping{}, fmt.Errorf("marshal vendor_meta: %w", err)
 	}
 	_, err = a.client.PGExec(ctx, `
-		UPDATE yfinance.instrument_ticker_mapping
+		UPDATE basic_data.instrument_ticker_mapping
 		   SET sector      = COALESCE($1, sector),
 		       subindustry = COALESCE($2, subindustry),
 		       vendor_meta = $3::jsonb,
@@ -150,7 +150,7 @@ func (a *App) GetTickerMapping(ctx context.Context, instrumentID, portfolioID st
 	res, err := a.client.PGQuery(ctx, `
 		SELECT instrument_id, portfolio_id, symbol, sector, subindustry,
 		       vendor_meta, subscribed, created_at, updated_at, updated_by
-		  FROM yfinance.instrument_ticker_mapping
+		  FROM basic_data.instrument_ticker_mapping
 		 WHERE instrument_id = $1
 		   AND portfolio_id  = $2
 	`, instrumentID, portfolioID)
@@ -168,7 +168,7 @@ func (a *App) ListSubscribedTickerMappings(ctx context.Context) ([]TickerMapping
 	res, err := a.client.PGQuery(ctx, `
 		SELECT instrument_id, portfolio_id, symbol, sector, subindustry,
 		       vendor_meta, subscribed, created_at, updated_at, updated_by
-		  FROM yfinance.instrument_ticker_mapping
+		  FROM basic_data.instrument_ticker_mapping
 		 WHERE subscribed
 		 ORDER BY portfolio_id, instrument_id
 	`)
@@ -191,7 +191,7 @@ func (a *App) ListTickerMappings(ctx context.Context) ([]TickerMapping, error) {
 	res, err := a.client.PGQuery(ctx, `
 		SELECT instrument_id, portfolio_id, symbol, sector, subindustry,
 		       vendor_meta, subscribed, created_at, updated_at, updated_by
-		  FROM yfinance.instrument_ticker_mapping
+		  FROM basic_data.instrument_ticker_mapping
 		 ORDER BY portfolio_id, instrument_id
 	`)
 	if err != nil {
@@ -234,7 +234,7 @@ func (a *App) SetCanonicalIdentity(ctx context.Context, instrumentID, portfolioI
 		return fmt.Errorf("marshal vendor_meta: %w", err)
 	}
 	_, err = a.client.PGExec(ctx, `
-		UPDATE yfinance.instrument_ticker_mapping
+		UPDATE basic_data.instrument_ticker_mapping
 		   SET vendor_meta = $1::jsonb,
 		       updated_at  = $2
 		 WHERE instrument_id = $3

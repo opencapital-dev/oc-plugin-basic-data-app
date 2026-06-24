@@ -38,7 +38,7 @@ func TestUpsertTickerMappingSQL(t *testing.T) {
 		t.Fatalf("expected 1 PGExec call, got %d", len(fc.pgExecCalls))
 	}
 	sql := fc.pgExecCalls[0].sql
-	if !strings.Contains(sql, "yfinance.instrument_ticker_mapping") {
+	if !strings.Contains(sql, "basic_data.instrument_ticker_mapping") {
 		t.Errorf("SQL missing table name: %s", sql)
 	}
 	if !strings.Contains(sql, "ON CONFLICT") {
@@ -122,13 +122,24 @@ func TestEnsureSchema(t *testing.T) {
 	app.ensureSchema(context.Background())
 
 	if len(fc.pgExecCalls) < 2 {
-		t.Fatalf("expected at least 2 PGExec calls (CREATE SCHEMA + CREATE TABLE ...), got %d", len(fc.pgExecCalls))
+		t.Fatalf("expected at least 2 PGExec calls (rename DO-block + CREATE SCHEMA + CREATE TABLE ...), got %d", len(fc.pgExecCalls))
 	}
 
-	// First call must be CREATE SCHEMA IF NOT EXISTS yfinance.
+	// First call must be the idempotent schema rename DO-block.
 	firstSQL := fc.pgExecCalls[0].sql
-	if !strings.Contains(firstSQL, "CREATE SCHEMA IF NOT EXISTS yfinance") {
-		t.Errorf("first PGExec call missing CREATE SCHEMA IF NOT EXISTS yfinance: %s", firstSQL)
+	if !strings.Contains(firstSQL, "ALTER SCHEMA yfinance RENAME TO basic_data") {
+		t.Errorf("first PGExec must perform the idempotent schema rename: %s", firstSQL)
+	}
+
+	// A later call must create schema basic_data.
+	var foundSchema bool
+	for _, c := range fc.pgExecCalls {
+		if strings.Contains(c.sql, "CREATE SCHEMA IF NOT EXISTS basic_data") {
+			foundSchema = true
+		}
+	}
+	if !foundSchema {
+		t.Error("expected CREATE SCHEMA IF NOT EXISTS basic_data")
 	}
 
 	// One of the calls must create the instrument_ticker_mapping table.

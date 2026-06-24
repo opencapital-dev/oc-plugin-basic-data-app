@@ -23,7 +23,7 @@ describe('Components/App', () => {
     props = {
       basename: 'a/yfinance-ingestor',
       meta: {
-        id: 'yfinance-app',
+        id: 'basic-data-app',
         name: 'yFinance Data',
         type: PluginType.app,
         enabled: true,

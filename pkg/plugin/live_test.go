@@ -55,7 +55,7 @@ func TestQuoteObservedMicros(t *testing.T) {
 // and asserts: correct column order in the INSERT, namespace == prices.quote,
 // source == "yahoo_ws", and rw_key == datakey.DataKey(...).
 func TestPublishTickDataLogInsert(t *testing.T) {
-	const pluginID = "yfinance-app"
+	const pluginID = "basic-data-app"
 	const portfolioID = "port-1"
 	const instrumentID = "instr-1"
 	const symbol = "AAPL"

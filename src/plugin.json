@@ -1,12 +1,12 @@
 {
   "$schema": "https://raw.githubusercontent.com/grafana/grafana/main/docs/sources/developers/plugins/plugin.schema.json",
   "type": "app",
-  "name": "yfinance Data",
-  "id": "yfinance-app",
+  "name": "Basic Data",
+  "id": "basic-data-app",
   "backend": true,
-  "executable": "gpx_yfinance-app",
+  "executable": "gpx_basic-data-app",
   "opencapital": {
-    "plugin_id": "yfinance-app",
+    "plugin_id": "basic-data-app",
     "platform_plugin": false,
     "logical_views": [
       { "name": "instruments_used_v", "source_table": "public.instruments_used" },

@@ -11,7 +11,7 @@ describe('Components/AppConfig', () => {
     props = {
       plugin: {
         meta: {
-          id: 'yfinance-app',
+          id: 'basic-data-app',
           name: 'yFinance Data',
           type: PluginType.app,
           enabled: true,
@@ -26,6 +26,6 @@ describe('Components/AppConfig', () => {
     // @ts-ignore - addConfigPage() / setChannelSupport() not needed in tests
     render(<AppConfig plugin={props.plugin} query={props.query} />);
     expect(screen.getByText(/yFinance Data/i)).toBeInTheDocument();
-    expect(screen.getByText(/yfinance-app_url/i)).toBeInTheDocument();
+    expect(screen.getByText(/basic-data-app_url/i)).toBeInTheDocument();
   });
 });

@@ -63,7 +63,7 @@
     "node": "\u003e=22"
   },
   "license": "Apache-2.0",
-  "name": "yfinance-ingestor",
+  "name": "basic-data-app",
   "packageManager": "npm@11.10.1",
   "scripts": {
     "build": "webpack -c ./.config/webpack/webpack.config.ts --env production",

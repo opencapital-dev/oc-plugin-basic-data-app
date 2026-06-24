@@ -5,7 +5,7 @@ PNL_COLS = ["realized_equity_avg_base", "realized_forex_avg_base",
     positions=("SELECT DISTINCT ON (portfolio, instrument) * FROM e_instrument "
                "WHERE portfolio=$1 AND quantity != $2 "
                "ORDER BY portfolio, instrument, ts DESC", "$portfolio_id", 0),
-    sectors=pg("SELECT DISTINCT ON (portfolio, instrument_id) * FROM yfinance.gw_classification "
+    sectors=pg("SELECT DISTINCT ON (portfolio, instrument_id) * FROM basic_data.gw_classification "
                "WHERE portfolio=$1 ORDER BY portfolio, instrument_id, ts DESC", "$portfolio_id"),
 )
 @metric(output="table")
