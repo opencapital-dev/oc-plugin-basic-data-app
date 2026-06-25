@@ -98,5 +98,11 @@ func (c *YfClient) FetchOptionChain(ctx context.Context, underlyingSymbol string
 		return nil, fmt.Errorf("nil option chain for %s at %s", underlyingSymbol, expiry.Format("2006-01-02"))
 	}
 	rows := optionRowsFromChain(chain.Calls, chain.Puts)
-	return &OptionChainResult{Rows: rows, Expiration: chain.Expiration}, nil
+	res := &OptionChainResult{Rows: rows, Expiration: chain.Expiration}
+	if chain.Underlying != nil {
+		res.MarketState = chain.Underlying.MarketState
+		res.UnderlyingCurrency = chain.Underlying.Currency
+		res.QuoteTimeUs = chain.Underlying.RegularMarketTime * 1_000_000
+	}
+	return res, nil
 }
