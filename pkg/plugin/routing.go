@@ -16,4 +16,5 @@ func (a *App) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/settings", a.handleSettings)
 	mux.HandleFunc("/settings/test-fred", a.handleTestFred)
 	mux.HandleFunc("/yf/option-underlyings", a.handleOptionUnderlyings)
+	mux.HandleFunc("/yf/overview", a.handleOverview)
 }
