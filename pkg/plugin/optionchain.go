@@ -80,6 +80,21 @@ func markFromRow(r OptionRow) (float64, bool) {
 	return 0, false
 }
 
+// optionResultFromChain builds an OptionChainResult from a fetched chain,
+// populating the underlying-derived gate/quote fields when present.
+func optionResultFromChain(chain *yfmodels.OptionChain) *OptionChainResult {
+	res := &OptionChainResult{
+		Rows:       optionRowsFromChain(chain.Calls, chain.Puts),
+		Expiration: chain.Expiration,
+	}
+	if chain.Underlying != nil {
+		res.MarketState = chain.Underlying.MarketState
+		res.UnderlyingCurrency = chain.Underlying.Currency
+		res.QuoteTimeUs = chain.Underlying.RegularMarketTime * 1_000_000 // seconds → micros
+	}
+	return res
+}
+
 // FetchOptionChain fetches the option chain for the given underlying symbol at
 // the specified expiry. The limiter token is consumed before the network call.
 func (c *YfClient) FetchOptionChain(ctx context.Context, underlyingSymbol string, expiry time.Time) (*OptionChainResult, error) {
@@ -97,12 +112,5 @@ func (c *YfClient) FetchOptionChain(ctx context.Context, underlyingSymbol string
 	if chain == nil {
 		return nil, fmt.Errorf("nil option chain for %s at %s", underlyingSymbol, expiry.Format("2006-01-02"))
 	}
-	rows := optionRowsFromChain(chain.Calls, chain.Puts)
-	res := &OptionChainResult{Rows: rows, Expiration: chain.Expiration}
-	if chain.Underlying != nil {
-		res.MarketState = chain.Underlying.MarketState
-		res.UnderlyingCurrency = chain.Underlying.Currency
-		res.QuoteTimeUs = chain.Underlying.RegularMarketTime * 1_000_000
-	}
-	return res, nil
+	return optionResultFromChain(chain), nil
 }

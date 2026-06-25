@@ -27,6 +27,23 @@ func TestMarkFromRowSkipsWhenNoPrice(t *testing.T) {
 	}
 }
 
+func TestOptionResultFromChainPopulatesUnderlying(t *testing.T) {
+	chain := &yfmodels.OptionChain{
+		Calls:      []yfmodels.Option{{Strike: 150, Bid: 1, Ask: 2}},
+		Underlying: &yfmodels.OptionQuote{MarketState: "REGULAR", Currency: "USD", RegularMarketTime: 1700},
+	}
+	res := optionResultFromChain(chain)
+	if res.MarketState != "REGULAR" || res.UnderlyingCurrency != "USD" {
+		t.Fatalf("underlying not mapped: %+v", res)
+	}
+	if res.QuoteTimeUs != 1700*1_000_000 {
+		t.Fatalf("QuoteTimeUs = %d, want %d", res.QuoteTimeUs, 1700*1_000_000)
+	}
+	if len(res.Rows) != 1 {
+		t.Fatalf("rows = %d, want 1", len(res.Rows))
+	}
+}
+
 func TestMatchRowByStrikeAndRight(t *testing.T) {
 	rows := optionRowsFromChain(
 		[]yfmodels.Option{{Strike: 150, Bid: 1, Ask: 2, Currency: "USD"}},
