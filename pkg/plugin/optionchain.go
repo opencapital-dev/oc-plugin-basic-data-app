@@ -22,8 +22,11 @@ type OptionRow struct {
 
 // OptionChainResult is the parsed chain returned by FetchOptionChain.
 type OptionChainResult struct {
-	Rows       []OptionRow
-	Expiration time.Time
+	Rows               []OptionRow
+	Expiration         time.Time
+	MarketState        string // e.g. "REGULAR", "CLOSED", "PRE", "POST"
+	UnderlyingCurrency string
+	QuoteTimeUs        int64 // unix microseconds of the quote snapshot
 }
 
 // optionRowsFromChain flattens calls and puts into a single OptionRow slice,
