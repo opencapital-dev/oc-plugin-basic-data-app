@@ -11,7 +11,7 @@ def _fred(series_id):
     ts = [o["date"] for o in obs]
     val = [None if o["value"] in (".", "") else float(o["value"]) for o in obs]
     return (pl.DataFrame({"ts": ts, "value": val})
-              .with_columns(pl.col("ts").str.to_datetime("%Y-%m-%d", strict=False))
+              .with_columns(pl.col("ts").str.to_datetime("%Y-%m-%d", strict=False).dt.epoch("us"))
               .drop_nulls())
 
 def _dbnomics(path):  # path = "Provider/dataset/series"
@@ -19,7 +19,7 @@ def _dbnomics(path):  # path = "Provider/dataset/series"
     doc = js["series"]["docs"][0]
     ts = doc.get("period_start_day") or doc["period"]
     return (pl.DataFrame({"ts": ts, "value": doc["value"]})
-              .with_columns(pl.col("ts").str.to_datetime("%Y-%m-%d", strict=False),
+              .with_columns(pl.col("ts").str.to_datetime("%Y-%m-%d", strict=False).dt.epoch("us"),
                             pl.col("value").cast(pl.Float64, strict=False))
               .drop_nulls())
 

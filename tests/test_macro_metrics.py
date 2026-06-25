@@ -1,5 +1,5 @@
 import polars as pl
-from tests.test_cpi_yoy import _run, LIBRARY_PANELS
+from tests.test_cpi_yoy import _run, LIBRARY_PANELS, assert_ts_contract
 
 
 def _sql_key(q, *a):
@@ -15,6 +15,7 @@ def test_unemployment_us_passthrough_level():
 
     df = _run(src, "US", fetch, _sql_key)
     assert df.sort("ts")["value"][-1] == 3.9
+    assert_ts_contract(df)
 
 
 def test_curve_slope_us_is_10y_minus_2y():
@@ -28,3 +29,4 @@ def test_curve_slope_us_is_10y_minus_2y():
 
     df = _run(src, "US", fetch, _sql_key)
     assert abs(df["value"][0] - (-0.5)) < 1e-9
+    assert_ts_contract(df)

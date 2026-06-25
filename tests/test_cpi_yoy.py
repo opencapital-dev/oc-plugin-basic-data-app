@@ -1,8 +1,23 @@
+import json
 from pathlib import Path
 
 import polars as pl
 
 LIBRARY_PANELS = Path(__file__).resolve().parent.parent / "library-panels"
+
+
+def assert_ts_contract(df):
+    """Series contract: `ts` must be Int64 epoch microseconds AND the frame must
+    be JSON-serializable.
+
+    computeframe.ToFrame frames a numeric `ts` column as time.UnixMicro, and the
+    sidecar serializes rows with json.dumps in _send_json. A polars Datetime `ts`
+    yields Python datetime objects → json.dumps raises TypeError OUTSIDE the
+    request try/except → the handler thread dies → the caller gets EOF (empty
+    reply), not an error. Assert both here to catch that regression.
+    """
+    assert df["ts"].dtype == pl.Int64, f"ts must be Int64 epoch-us, got {df['ts'].dtype}"
+    json.dumps([list(r) for r in df.rows()])  # raises on datetime / non-JSON cells
 
 
 def _run(source: str, country: str, fake_fetch, fake_sql):
@@ -35,3 +50,4 @@ def test_cpi_yoy_us_uses_fred_and_computes_yoy():
                 + [{"date": "2024-01-01", "value": "112"}]}
     df = _run(src, "US", fake_fetch, fake_sql)
     assert abs(df.sort("ts")["value"][-1] - 12.0) < 1e-6
+    assert_ts_contract(df)
