@@ -60,7 +60,7 @@ jobs:
       - uses: opencapital-dev/oc-plugin-publish-action@v1
         with:
           dir: .
-          id: yfinance-app
+          id: basic-data-app
           owner: opencapital-dev
           version: ${{ github.ref_name }}
           platforms: darwin-amd64,darwin-arm64,windows-amd64
