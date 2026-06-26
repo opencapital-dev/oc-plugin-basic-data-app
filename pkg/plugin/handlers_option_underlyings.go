@@ -50,7 +50,7 @@ func (a *App) handleOptionUnderlyings(w http.ResponseWriter, r *http.Request) {
 		rows := make([]optionUnderlyingRow, 0, len(counts))
 		for key, n := range counts {
 			root, pf := splitKey(key)
-			m, err := resolveOptionUnderlying(ctx, a.client, root, pf)
+			m, err := lookupOptionUnderlying(ctx, a.client, root, pf)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -71,7 +71,8 @@ func (a *App) handleOptionUnderlyings(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "root and portfolio_id required", http.StatusBadRequest)
 			return
 		}
-		// Ensure a row exists, then patch provided fields.
+		// Ensure a row exists under the namespaced key, then patch provided fields.
+		optKey := optionUnderlyingKey(p.Root)
 		if _, err := resolveOptionUnderlying(ctx, a.client, p.Root, p.PortfolioID); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -81,7 +82,7 @@ func (a *App) handleOptionUnderlyings(w http.ResponseWriter, r *http.Request) {
 			if _, err := a.client.PGExec(ctx,
 				`UPDATE basic_data.instrument_ticker_mapping SET symbol = $3, updated_at = $4, updated_by = 'options-tab'
 				 WHERE instrument_id = $1 AND portfolio_id = $2`,
-				p.Root, p.PortfolioID, *p.Symbol, now); err != nil {
+				optKey, p.PortfolioID, *p.Symbol, now); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
@@ -90,7 +91,7 @@ func (a *App) handleOptionUnderlyings(w http.ResponseWriter, r *http.Request) {
 			if _, err := a.client.PGExec(ctx,
 				`UPDATE basic_data.instrument_ticker_mapping SET subscribed = $3, updated_at = $4, updated_by = 'options-tab'
 				 WHERE instrument_id = $1 AND portfolio_id = $2`,
-				p.Root, p.PortfolioID, *p.Subscribed, now); err != nil {
+				optKey, p.PortfolioID, *p.Subscribed, now); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
