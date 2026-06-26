@@ -33,6 +33,9 @@ func runOptionPollOnce(ctx context.Context, client rwPGClient, pluginID string, 
 	}
 
 	// Build groups keyed by (yahooSymbol, expiry); resolve underlying per root.
+	// Memoize resolveOptionUnderlying within this pass: one DB round-trip per
+	// (root, portfolioID) instead of one per held contract.
+	underlyingCache := map[string]underlyingMapping{}
 	groups := map[string]*chainGroup{}
 	for _, p := range pairs {
 		if p.Kind != "option" {
@@ -45,8 +48,17 @@ func runOptionPollOnce(ctx context.Context, client rwPGClient, pluginID string, 
 		if parts.Expiry.Before(time.Now().Truncate(24 * time.Hour)) {
 			continue // expired
 		}
-		m, merr := resolveOptionUnderlying(ctx, client, parts.Underlying, p.PortfolioID)
-		if merr != nil || !m.Subscribed || m.Symbol == "" {
+		cacheKey := parts.Underlying + "|" + p.PortfolioID
+		m, cached := underlyingCache[cacheKey]
+		if !cached {
+			var merr error
+			m, merr = resolveOptionUnderlying(ctx, client, parts.Underlying, p.PortfolioID)
+			if merr != nil {
+				continue
+			}
+			underlyingCache[cacheKey] = m
+		}
+		if !m.Subscribed || m.Symbol == "" {
 			continue
 		}
 		key := m.Symbol + "|" + parts.Expiry.Format("2006-01-02")

@@ -4,6 +4,7 @@ package plugin
 import (
 	"context"
 	"fmt"
+	"math"
 	"time"
 
 	yfmodels "github.com/wnjoon/go-yfinance/pkg/models"
@@ -56,10 +57,10 @@ func optionRowsFromChain(calls, puts []yfmodels.Option) []OptionRow {
 	return rows
 }
 
-// matchRow finds the first row matching strike and right (case-insensitive).
+// matchRow finds the first row matching strike (within epsilon) and right.
 func matchRow(rows []OptionRow, strike float64, right string) (OptionRow, bool) {
 	for _, r := range rows {
-		if r.Strike == strike && r.Right == right {
+		if math.Abs(r.Strike-strike) < 1e-6 && r.Right == right {
 			return r, true
 		}
 	}

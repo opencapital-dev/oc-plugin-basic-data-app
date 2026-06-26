@@ -67,8 +67,17 @@ export function SettingsPage() {
               type="number"
               width={20}
               value={s?.optionPollIntervalSec ?? 900}
-              onChange={(e) => setS(s ? { ...s, optionPollIntervalSec: Number(e.currentTarget.value) } : s)}
-              onBlur={() => s && savePoll({ optionPollIntervalSec: s.optionPollIntervalSec })}
+              onChange={(e) => {
+                const v = Number(e.currentTarget.value);
+                if (!isNaN(v) && v >= 1) {
+                  setS(s ? { ...s, optionPollIntervalSec: v } : s);
+                }
+              }}
+              onBlur={() => {
+                if (s && !isNaN(s.optionPollIntervalSec) && s.optionPollIntervalSec >= 1) {
+                  savePoll({ optionPollIntervalSec: s.optionPollIntervalSec });
+                }
+              }}
             />
           </Field>
         </Section>

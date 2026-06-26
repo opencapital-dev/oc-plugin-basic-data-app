@@ -20,7 +20,9 @@ func overviewFromPairs(pairs []heldPair) (equities, options, underlyings int) {
 			}
 			continue
 		}
-		equities++
+		if p.Kind == "equity" {
+			equities++
+		}
 	}
 	return equities, options, len(roots)
 }
