@@ -17,6 +17,12 @@ import (
 type symbolTarget struct {
 	InstrumentID string
 	PortfolioID  string
+	// Currency is the authoritative Yahoo metadata currency (e.g. "GBp")
+	// resolved at backfill; RefPrice is the minor-unit reference anchor. Both
+	// drive minor-unit (pence) normalization of live ticks independent of the
+	// unreliable ws currency. Empty/zero until the first backfill resolves them.
+	Currency string
+	RefPrice float64
 }
 
 type LiveSubscriber struct {
@@ -68,6 +74,25 @@ func canonicalSymbol(m TickerMapping) string {
 	return m.Symbol
 }
 
+// canonicalUnit returns the authoritative currency + minor-unit reference price
+// captured at backfill in vendor_meta.canonical. Empty/zero when no backfill has
+// resolved them yet, in which case the live path falls back to the ws currency.
+func canonicalUnit(m TickerMapping) (string, float64) {
+	c, ok := m.VendorMeta["canonical"].(map[string]any)
+	if !ok {
+		return "", 0
+	}
+	currency, _ := c["currency"].(string)
+	var ref float64
+	switch v := c["ref_price"].(type) {
+	case float64:
+		ref = v
+	case json.Number:
+		ref, _ = v.Float64()
+	}
+	return currency, ref
+}
+
 // desiredSymbols maps the upper-cased canonical Yahoo symbol → its targets.
 // Subscribing the canonical form keeps the ws and REST on the same listing.
 func desiredSymbols(mappings []TickerMapping) map[string][]symbolTarget {
@@ -78,7 +103,13 @@ func desiredSymbols(mappings []TickerMapping) map[string][]symbolTarget {
 			continue
 		}
 		up := strings.ToUpper(sym)
-		out[up] = append(out[up], symbolTarget{InstrumentID: m.InstrumentID, PortfolioID: m.PortfolioID})
+		currency, ref := canonicalUnit(m)
+		out[up] = append(out[up], symbolTarget{
+			InstrumentID: m.InstrumentID,
+			PortfolioID:  m.PortfolioID,
+			Currency:     currency,
+			RefPrice:     ref,
+		})
 	}
 	return out
 }
@@ -153,20 +184,28 @@ func (s *LiveSubscriber) publishTick(data *yfmodels.PricingData) {
 
 	observedAtUs := quoteObservedMicros(data.Time, time.Now())
 
-	majorCurrency, divisor := normalizeMinorUnits(data.Currency)
-	mid := float64(data.Price) / divisor
-	bid := float64(data.Bid) / divisor
-	ask := float64(data.Ask) / divisor
-	if bid <= 0 {
-		bid = mid
-	}
-	if ask <= 0 {
-		ask = mid
-	}
+	rawMid := float64(data.Price)
+	rawBid := float64(data.Bid)
+	rawAsk := float64(data.Ask)
 
 	ctx := context.Background()
 
 	for _, tgt := range targets {
+		// Resolve the unit per target from the authoritative currency captured
+		// at backfill (falling back to the ws currency), then classify THIS tick
+		// minor/major against the reference — the ws sends pence and pounds
+		// intermittently on the same minor-unit listing.
+		majorCurrency, divisor := liveUnit(tgt.Currency, data.Currency)
+		mid := normalizeTickValue(rawMid, tgt.RefPrice, divisor)
+		bid := normalizeTickValue(rawBid, tgt.RefPrice, divisor)
+		ask := normalizeTickValue(rawAsk, tgt.RefPrice, divisor)
+		if bid <= 0 {
+			bid = mid
+		}
+		if ask <= 0 {
+			ask = mid
+		}
+
 		s.ticks.Set(tgt.InstrumentID+"|"+tgt.PortfolioID, observedAtUs)
 
 		payloadJSON, perr := json.Marshal(map[string]any{

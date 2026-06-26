@@ -210,10 +210,16 @@ func (a *App) ListTickerMappings(ctx context.Context) ([]TickerMapping, error) {
 }
 
 // SetCanonicalIdentity records the REST-resolved canonical Yahoo identity for an
-// instrument under vendor_meta.canonical = {symbol, exch}. The live subscriber
-// reads symbol via canonicalSymbol() so it subscribes the same listing REST
-// resolved. Best-effort; a no-op when symbol is empty.
-func (a *App) SetCanonicalIdentity(ctx context.Context, instrumentID, portfolioID, symbol, exchange string) error {
+// instrument under vendor_meta.canonical = {symbol, exch, currency, ref_price}.
+// The live subscriber reads symbol via canonicalSymbol() so it subscribes the
+// same listing REST resolved, and reads currency + ref_price via canonicalUnit()
+// so it normalizes minor-unit (pence) ticks without trusting the unreliable ws
+// currency field. currency is Yahoo's raw metadata currency (e.g. "GBp");
+// refPrice is the minor-unit reference (FastInfo) used as the classifier anchor.
+// A backfill that cannot determine the unit (currency == "" / refPrice <= 0,
+// e.g. a major-unit ticker or a FastInfo miss) preserves the previously-resolved
+// values so the live anchor stays stable. Best-effort; a no-op when symbol is empty.
+func (a *App) SetCanonicalIdentity(ctx context.Context, instrumentID, portfolioID, symbol, exchange, currency string, refPrice float64) error {
 	if symbol == "" {
 		return nil
 	}
@@ -225,10 +231,30 @@ func (a *App) SetCanonicalIdentity(ctx context.Context, instrumentID, portfolioI
 	if meta == nil {
 		meta = map[string]any{}
 	}
-	meta["canonical"] = map[string]any{
+	// Carry forward a prior minor-unit anchor when this backfill didn't resolve one.
+	if prev, ok := meta["canonical"].(map[string]any); ok {
+		if currency == "" {
+			if pc, ok := prev["currency"].(string); ok {
+				currency = pc
+			}
+		}
+		if refPrice <= 0 {
+			if pr, ok := prev["ref_price"].(float64); ok {
+				refPrice = pr
+			}
+		}
+	}
+	canonical := map[string]any{
 		"symbol": symbol,
 		"exch":   strings.ToUpper(strings.TrimSpace(exchange)),
 	}
+	if currency != "" {
+		canonical["currency"] = currency
+	}
+	if refPrice > 0 {
+		canonical["ref_price"] = refPrice
+	}
+	meta["canonical"] = canonical
 	metaJSON, err := json.Marshal(meta)
 	if err != nil {
 		return fmt.Errorf("marshal vendor_meta: %w", err)

@@ -128,7 +128,7 @@ func runBackfillJob(
 	}
 
 	state.MarkFinished(job, "done", published, "", nowMicros())
-	if cerr := app.SetCanonicalIdentity(ctx, job.InstrumentID, job.PortfolioID, resolvedSymbol, resolvedExchange); cerr != nil {
+	if cerr := app.SetCanonicalIdentity(ctx, job.InstrumentID, job.PortfolioID, resolvedSymbol, resolvedExchange, rawCurrency, referencePrice); cerr != nil {
 		log.DefaultLogger.Warn("set canonical identity failed",
 			"instrument_id", job.InstrumentID, "portfolio_id", job.PortfolioID,
 			"resolved_symbol", resolvedSymbol, "err", cerr)

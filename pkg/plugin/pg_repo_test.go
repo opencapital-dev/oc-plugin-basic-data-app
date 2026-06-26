@@ -185,7 +185,7 @@ func TestListSubscribedTickerMappingsSQL(t *testing.T) {
 func TestSetCanonicalIdentitySQL(t *testing.T) {
 	fc := &fakeClient{pgQueryResult: mappingResult("AET.L")}
 	app := makeAppWithFakeClient(fc)
-	if err := app.SetCanonicalIdentity(context.Background(), "instr-1", "port-1", "AET.L", "LSE"); err != nil {
+	if err := app.SetCanonicalIdentity(context.Background(), "instr-1", "port-1", "AET.L", "LSE", "GBp", 176.9); err != nil {
 		t.Fatalf("SetCanonicalIdentity: %v", err)
 	}
 	if len(fc.pgExecCalls) != 1 {
@@ -224,10 +224,62 @@ func TestEnsureSchemaCreatesAppSettings(t *testing.T) {
 func TestSetCanonicalIdentityNoopOnEmpty(t *testing.T) {
 	fc := &fakeClient{pgQueryResult: mappingResult("AET.L")}
 	app := makeAppWithFakeClient(fc)
-	if err := app.SetCanonicalIdentity(context.Background(), "instr-1", "port-1", "", "LSE"); err != nil {
+	if err := app.SetCanonicalIdentity(context.Background(), "instr-1", "port-1", "", "LSE", "GBp", 176.9); err != nil {
 		t.Fatalf("err: %v", err)
 	}
 	if len(fc.pgExecCalls) != 0 {
 		t.Fatalf("empty symbol must be a no-op, got %d PGExec", len(fc.pgExecCalls))
+	}
+}
+
+// The authoritative Yahoo currency + minor-unit reference price must be
+// persisted into vendor_meta.canonical so the live classifier can divide pence
+// ticks without trusting the unreliable ws currency field.
+func TestSetCanonicalIdentityPersistsCurrencyAndRef(t *testing.T) {
+	fc := &fakeClient{pgQueryResult: mappingResult("GKP.L")}
+	app := makeAppWithFakeClient(fc)
+	if err := app.SetCanonicalIdentity(context.Background(), "instr-1", "port-1", "GKP.L", "LSE", "GBp", 176.9); err != nil {
+		t.Fatalf("SetCanonicalIdentity: %v", err)
+	}
+	if len(fc.pgExecCalls) != 1 {
+		t.Fatalf("expected 1 PGExec, got %d", len(fc.pgExecCalls))
+	}
+	var meta string
+	for _, a := range fc.pgExecCalls[0].args {
+		if s, ok := a.(string); ok && strings.Contains(s, `"canonical"`) {
+			meta = s
+		}
+	}
+	if !strings.Contains(meta, `"currency":"GBp"`) {
+		t.Errorf("vendor_meta missing currency GBp: %s", meta)
+	}
+	if !strings.Contains(meta, `"ref_price":176.9`) {
+		t.Errorf("vendor_meta missing ref_price 176.9: %s", meta)
+	}
+}
+
+// A later backfill that cannot determine the unit (major-unit ticker → empty
+// currency, zero reference) must not wipe a previously-resolved minor-unit
+// anchor; the live classifier relies on it staying stable.
+func TestSetCanonicalIdentityPreservesPriorUnit(t *testing.T) {
+	prior := mappingResult("GKP.L")
+	prior.Rows[0][5] = map[string]interface{}{
+		"canonical": map[string]interface{}{
+			"symbol": "GKP.L", "exch": "LSE", "currency": "GBp", "ref_price": float64(176.9),
+		},
+	}
+	fc := &fakeClient{pgQueryResult: prior}
+	app := makeAppWithFakeClient(fc)
+	if err := app.SetCanonicalIdentity(context.Background(), "instr-1", "port-1", "GKP.L", "LSE", "", 0); err != nil {
+		t.Fatalf("SetCanonicalIdentity: %v", err)
+	}
+	var meta string
+	for _, a := range fc.pgExecCalls[0].args {
+		if s, ok := a.(string); ok && strings.Contains(s, `"canonical"`) {
+			meta = s
+		}
+	}
+	if !strings.Contains(meta, `"currency":"GBp"`) || !strings.Contains(meta, `"ref_price":176.9`) {
+		t.Errorf("prior unit not preserved: %s", meta)
 	}
 }
