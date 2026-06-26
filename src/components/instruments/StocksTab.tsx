@@ -4,21 +4,20 @@ import { css } from '@emotion/css';
 import { AppEvents, type GrafanaTheme2 } from '@grafana/data';
 import { Badge, Icon, Select, Stack, useStyles2 } from '@grafana/ui';
 
-import { Page } from '../components/Page';
-import { appEvents } from '../lib/toast';
+import { appEvents } from '../../lib/toast';
 import {
   changeYahooSymbol,
   listInstrumentsUsed,
   type BackfillState,
   type InstrumentUsedRow,
-} from '../api/yfinance';
-import { lookupSymbol, type LookupCandidate } from '../api/reference';
+} from '../../api/yfinance';
+import { lookupSymbol, type LookupCandidate } from '../../api/reference';
 import {
   CANONICAL_SECTORS,
   CANONICAL_INDUSTRIES,
   mergeClassificationOptions,
   setClassification,
-} from '../api/classification';
+} from '../../api/classification';
 
 const LIVE_TICK_MAX_AGE_SEC = 60;
 const STALE_THRESHOLD_HOURS = 36;
@@ -56,7 +55,7 @@ function pairKey(row: InstrumentUsedRow): string {
  * case-insensitively (or is the only result), auto-set it. Operators can
  * always override via the dropdown.
  */
-export function TickersPage() {
+export function StocksTab() {
   const styles = useStyles2(getStyles);
   const [rows, setRows] = useState<InstrumentUsedRow[] | null>(null);
   const [candidatesByPair, setCandidatesByPair] = useState<Record<string, CandidatesState>>({});
@@ -278,7 +277,7 @@ export function TickersPage() {
   );
 
   return (
-    <Page>
+    <>
       <div className={styles.header}>
         <div>
           <h2 className={styles.h2}>Yahoo mappings</h2>
@@ -356,7 +355,7 @@ export function TickersPage() {
           </table>
         )}
       </div>
-    </Page>
+    </>
   );
 }
 
