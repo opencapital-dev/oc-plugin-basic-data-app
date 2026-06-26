@@ -8,6 +8,7 @@
     "publicURL": "https://ghcr.io"
   },
   "versions": [
+    "v0.2.5",
     "v0.2.4",
     "v0.2.3",
     "v0.2.2",
