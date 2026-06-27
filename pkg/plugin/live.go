@@ -3,68 +3,100 @@ package plugin
 import (
 	"context"
 	"encoding/json"
-	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend/log"
 	"github.com/opencapital-dev/oc-plugin-sdk/datakey"
-	yflive "github.com/wnjoon/go-yfinance/pkg/live"
-	yfmodels "github.com/wnjoon/go-yfinance/pkg/models"
 )
+
+// quoteFetcher is the interface QuotePoller uses to retrieve the current price
+// for a symbol. *YfClient satisfies this interface via FetchQuote.
+type quoteFetcher interface {
+	FetchQuote(ctx context.Context, symbol string) (price float64, currency string, err error)
+}
+
+// quoteDayKey returns the data_log rw_key for a quote row keyed to the UTC day
+// containing atUs (microseconds). Two polls on the same UTC day for the same
+// (portfolio, instrument) produce the same key, causing data_log's PRIMARY KEY
+// upsert — one row per (instrument, day). Today's row updates each minute;
+// past days freeze at their last poll value (≈ close).
+func quoteDayKey(pluginID, portfolio, instrument string, atUs int64) string {
+	dayStart := time.UnixMicro(atUs).UTC().Truncate(24 * time.Hour)
+	return datakey.DataKey(pluginID, QuoteNamespace, portfolio, instrument, dayStart.UnixMicro())
+}
 
 type symbolTarget struct {
 	InstrumentID string
 	PortfolioID  string
 	// Currency is the authoritative Yahoo metadata currency (e.g. "GBp")
 	// resolved at backfill; RefPrice is the minor-unit reference anchor. Both
-	// drive minor-unit (pence) normalization of live ticks independent of the
-	// unreliable ws currency. Empty/zero until the first backfill resolves them.
+	// drive minor-unit (pence) normalization of polled prices independent of
+	// the unreliable API-reported currency. Empty/zero until the first
+	// backfill resolves them.
 	Currency string
 	RefPrice float64
 }
 
-type LiveSubscriber struct {
-	ws       *yflive.WebSocket
+// QuotePoller replaces the WebSocket LiveSubscriber. On a 60-second timer it
+// calls YfClient.FetchQuote for each tracked symbol and upserts ONE data_log
+// quote row per (instrument, day) — same-day polls hit the same primary-key row
+// (the day-truncated rw_key makes them identical), so today's price moves while
+// past days freeze at their last poll value (~close).
+type QuotePoller struct {
+	yf       quoteFetcher
 	client   rwPGClient
 	ticks    *LiveTickMap
 	pluginID string
 	mu       sync.Mutex
 	current  map[string]struct{}
 	bySymbol map[string][]symbolTarget
+	cancel   context.CancelFunc
 }
 
-func NewLiveSubscriber(client rwPGClient, ticks *LiveTickMap, pluginID string) (*LiveSubscriber, error) {
-	ws, err := yflive.New()
-	if err != nil {
-		return nil, err
-	}
-	return &LiveSubscriber{
-		ws:       ws,
+func NewQuotePoller(yf quoteFetcher, client rwPGClient, ticks *LiveTickMap, pluginID string) *QuotePoller {
+	return &QuotePoller{
+		yf:       yf,
 		client:   client,
 		ticks:    ticks,
 		pluginID: pluginID,
 		current:  map[string]struct{}{},
 		bySymbol: map[string][]symbolTarget{},
-	}, nil
+	}
 }
 
-// Start connects + begins the listen goroutine.
-func (s *LiveSubscriber) Start(_ context.Context) error {
-	if err := s.ws.Connect(); err != nil {
-		return err
-	}
-	_ = s.ws.ListenAsync(func(data *yfmodels.PricingData) {
-		s.publishTick(data)
-	})
+// Start launches the background 60-second poll goroutine. The goroutine exits
+// when ctx is done or Close is called.
+func (p *QuotePoller) Start(ctx context.Context) error {
+	pollerCtx, cancel := context.WithCancel(ctx)
+	p.cancel = cancel
+	go func() {
+		tk := time.NewTicker(60 * time.Second)
+		defer tk.Stop()
+		for {
+			select {
+			case <-pollerCtx.Done():
+				return
+			case t := <-tk.C:
+				p.pollOnce(pollerCtx, t)
+			}
+		}
+	}()
 	return nil
+}
+
+// Close cancels the poll goroutine started by Start.
+func (p *QuotePoller) Close() {
+	if p != nil && p.cancel != nil {
+		p.cancel()
+	}
 }
 
 // canonicalSymbol returns the REST-resolved fully-qualified Yahoo symbol stored
 // at backfill in vendor_meta.canonical.symbol, falling back to the raw mapping
-// symbol until the first backfill resolves it. Subscribing the canonical form
-// makes the live ws resolve the same listing REST used.
+// symbol until the first backfill resolves it. Polling the canonical form
+// matches the same listing REST used during backfill.
 func canonicalSymbol(m TickerMapping) string {
 	if c, ok := m.VendorMeta["canonical"].(map[string]any); ok {
 		if s, ok := c["symbol"].(string); ok && s != "" {
@@ -75,8 +107,8 @@ func canonicalSymbol(m TickerMapping) string {
 }
 
 // canonicalUnit returns the authoritative currency + minor-unit reference price
-// captured at backfill in vendor_meta.canonical. Empty/zero when no backfill has
-// resolved them yet, in which case the live path falls back to the ws currency.
+// captured at backfill in vendor_meta.canonical. Empty/zero when no backfill
+// has resolved them yet.
 func canonicalUnit(m TickerMapping) (string, float64) {
 	c, ok := m.VendorMeta["canonical"].(map[string]any)
 	if !ok {
@@ -94,7 +126,7 @@ func canonicalUnit(m TickerMapping) (string, float64) {
 }
 
 // desiredSymbols maps the upper-cased canonical Yahoo symbol → its targets.
-// Subscribing the canonical form keeps the ws and REST on the same listing.
+// Using the canonical form keeps the poll and REST on the same listing.
 func desiredSymbols(mappings []TickerMapping) map[string][]symbolTarget {
 	out := map[string][]symbolTarget{}
 	for _, m := range mappings {
@@ -114,125 +146,106 @@ func desiredSymbols(mappings []TickerMapping) map[string][]symbolTarget {
 	return out
 }
 
-func (s *LiveSubscriber) SetSymbols(ctx context.Context, mappings []TickerMapping) {
+// SetSymbols updates the set of tracked symbols. The previous WebSocket
+// subscribe/unsubscribe calls are no longer needed; this now only updates
+// the in-memory symbol → target bookkeeping.
+func (p *QuotePoller) SetSymbols(_ context.Context, mappings []TickerMapping) {
 	bySymbol := desiredSymbols(mappings)
 	desired := make(map[string]struct{}, len(bySymbol))
 	for up := range bySymbol {
 		desired[up] = struct{}{}
 	}
 
-	s.mu.Lock()
-	toAdd := []string{}
-	toRemove := []string{}
+	p.mu.Lock()
+	var toAdd, toRemove []string
 	for sym := range desired {
-		if _, ok := s.current[sym]; !ok {
+		if _, ok := p.current[sym]; !ok {
 			toAdd = append(toAdd, sym)
 		}
 	}
-	for sym := range s.current {
+	for sym := range p.current {
 		if _, ok := desired[sym]; !ok {
 			toRemove = append(toRemove, sym)
 		}
 	}
-	s.current = desired
-	s.bySymbol = bySymbol
-	s.mu.Unlock()
-
-	sort.Strings(toAdd)
-	sort.Strings(toRemove)
+	p.current = desired
+	p.bySymbol = bySymbol
+	p.mu.Unlock()
 
 	if len(toAdd) > 0 {
-		if err := s.ws.Subscribe(toAdd); err != nil {
-			log.DefaultLogger.Warn("live ws subscribe failed", "count", len(toAdd), "err", err)
-		}
+		log.DefaultLogger.Debug("quote poller: tracking new symbols", "symbols", toAdd)
 	}
 	if len(toRemove) > 0 {
-		if err := s.ws.Unsubscribe(toRemove); err != nil {
-			log.DefaultLogger.Warn("live ws unsubscribe failed", "count", len(toRemove), "err", err)
-		}
+		log.DefaultLogger.Debug("quote poller: dropped symbols", "symbols", toRemove)
 	}
 }
 
-func (s *LiveSubscriber) Close() {
-	if s == nil || s.ws == nil {
-		return
+// pollOnce is the per-tick work unit: for every tracked symbol it fetches the
+// current price via FetchQuote and upserts one data_log row per (instrument,
+// day). now is the authoritative timestamp — in production it comes from the
+// ticker channel; in tests a fixed time is injected for determinism.
+func (p *QuotePoller) pollOnce(ctx context.Context, now time.Time) {
+	p.mu.Lock()
+	snapshot := make(map[string][]symbolTarget, len(p.bySymbol))
+	for k, v := range p.bySymbol {
+		snapshot[k] = v
 	}
-	_ = s.ws.Close()
-}
+	p.mu.Unlock()
 
-// quoteObservedMicros converts a Yahoo WebSocket quote time (epoch
-// milliseconds) to epoch microseconds. A zero time (Yahoo omitted it)
-// falls back to now.
-func quoteObservedMicros(timeMs int64, now time.Time) int64 {
-	if timeMs == 0 {
-		return now.UnixMicro()
-	}
-	return timeMs * 1_000
-}
+	observedAtUs := now.UnixMicro()
 
-func (s *LiveSubscriber) publishTick(data *yfmodels.PricingData) {
-	if data == nil || data.ID == "" {
-		return
-	}
-	up := strings.ToUpper(data.ID)
-	s.mu.Lock()
-	targets := s.bySymbol[up]
-	s.mu.Unlock()
-	if len(targets) == 0 {
-		return
-	}
-
-	observedAtUs := quoteObservedMicros(data.Time, time.Now())
-
-	rawMid := float64(data.Price)
-	rawBid := float64(data.Bid)
-	rawAsk := float64(data.Ask)
-
-	ctx := context.Background()
-
-	for _, tgt := range targets {
-		// Resolve the unit per target from the authoritative currency captured
-		// at backfill (falling back to the ws currency), then classify THIS tick
-		// minor/major against the reference — the ws sends pence and pounds
-		// intermittently on the same minor-unit listing.
-		majorCurrency, divisor := liveUnit(tgt.Currency, data.Currency)
-		mid := normalizeTickValue(rawMid, tgt.RefPrice, divisor)
-		bid := normalizeTickValue(rawBid, tgt.RefPrice, divisor)
-		ask := normalizeTickValue(rawAsk, tgt.RefPrice, divisor)
-		if bid <= 0 {
-			bid = mid
-		}
-		if ask <= 0 {
-			ask = mid
-		}
-
-		s.ticks.Set(tgt.InstrumentID+"|"+tgt.PortfolioID, observedAtUs)
-
-		payloadJSON, perr := json.Marshal(map[string]any{
-			"bid_price": bid,
-			"ask_price": ask,
-			"bid_size":  data.BidSize,
-			"ask_size":  data.AskSize,
-			"currency":  majorCurrency,
-			"venue":     data.Exchange,
-		})
-		if perr != nil {
+	for sym, targets := range snapshot {
+		price, currency, err := p.yf.FetchQuote(ctx, sym)
+		if err != nil {
+			log.DefaultLogger.Warn("quote poller: FetchQuote failed", "symbol", sym, "err", err)
 			continue
 		}
-		rwKey := datakey.DataKey(s.pluginID, QuoteNamespace, tgt.PortfolioID, tgt.InstrumentID, observedAtUs)
-		_, err := s.client.Exec(ctx, `
-			INSERT INTO data_log
-				(source_namespace, source_id, portfolio_id, observed_at, ingest_ts, source, plugin_id, trace_id, payload, rw_key)
-			VALUES ($1, $2, $3, to_timestamp($4::double precision / 1e6), now(), $5, $6, $7, $8, $9)
-		`,
-			QuoteNamespace, tgt.InstrumentID, tgt.PortfolioID, observedAtUs,
-			"yahoo_ws", s.pluginID, "", string(payloadJSON), rwKey,
-		)
-		if err != nil {
-			log.DefaultLogger.Warn("live tick publish failed",
-				"instrument_id", tgt.InstrumentID,
-				"portfolio_id", tgt.PortfolioID,
-				"err", err)
+		if price <= 0 {
+			log.DefaultLogger.Debug("quote poller: zero price, skipping", "symbol", sym)
+			continue
+		}
+
+		for _, tgt := range targets {
+			// Resolve the unit per target from the authoritative currency
+			// captured at backfill (falling back to the API-reported currency).
+			// Yahoo's FastInfo currency is more reliable than the ws field but
+			// still returns "GBp" / "GBX" for LSE tickers — normalizeMinorUnits
+			// handles those; liveUnit prefers the authoritative backfill value.
+			majorCurrency, divisor := liveUnit(tgt.Currency, currency)
+			mid := normalizeTickValue(price, tgt.RefPrice, divisor)
+
+			p.ticks.Set(tgt.InstrumentID+"|"+tgt.PortfolioID, observedAtUs)
+
+			payloadJSON, perr := json.Marshal(map[string]any{
+				"bid_price": mid,
+				"ask_price": mid,
+				"bid_size":  0,
+				"ask_size":  0,
+				"currency":  majorCurrency,
+				"venue":     "",
+			})
+			if perr != nil {
+				continue
+			}
+
+			// rw_key is day-truncated so same-day polls upsert the same row.
+			// observed_at stays the actual poll time so the point advances
+			// intra-day (and RW sees it as updated).
+			rwKey := quoteDayKey(p.pluginID, tgt.PortfolioID, tgt.InstrumentID, observedAtUs)
+			_, execErr := p.client.Exec(ctx, `
+				INSERT INTO data_log
+					(source_namespace, source_id, portfolio_id, observed_at, ingest_ts, source, plugin_id, trace_id, payload, rw_key)
+				VALUES ($1, $2, $3, to_timestamp($4::double precision / 1e6), now(), $5, $6, $7, $8, $9)
+			`,
+				QuoteNamespace, tgt.InstrumentID, tgt.PortfolioID, observedAtUs,
+				"yahoo_poll", p.pluginID, "", string(payloadJSON), rwKey,
+			)
+			if execErr != nil {
+				log.DefaultLogger.Warn("quote poller: publish failed",
+					"instrument_id", tgt.InstrumentID,
+					"portfolio_id", tgt.PortfolioID,
+					"err", execErr)
+			}
 		}
 	}
 }

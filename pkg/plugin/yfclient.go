@@ -137,6 +137,28 @@ func (c *YfClient) FetchBars(ctx context.Context, symbol, barSize string, start,
 	return bars, currency, resolvedSymbol, resolvedExchange, referencePrice, nil
 }
 
+// FetchQuote returns the current price and currency for symbol using FastInfo.
+// It applies the same QPS limiting and ticker setup as FetchBars.
+// price == 0 means Yahoo returned no positive price (rare; caller should skip).
+func (c *YfClient) FetchQuote(ctx context.Context, symbol string) (price float64, currency string, err error) {
+	if err = c.limiter.Wait(ctx); err != nil {
+		return 0, "", err
+	}
+	t, fErr := yfticker.New(symbol)
+	if fErr != nil {
+		return 0, "", fmt.Errorf("ticker new %s: %w", symbol, fErr)
+	}
+	fi, fErr := t.FastInfo()
+	if fErr != nil {
+		return 0, "", fmt.Errorf("fast_info %s: %w", symbol, fErr)
+	}
+	if fi == nil {
+		return 0, "", fmt.Errorf("fast_info %s: nil result", symbol)
+	}
+	price = pickPositive(fi.LastPrice, fi.PreviousClose, fi.RegularMarketPreviousClose)
+	return price, fi.Currency, nil
+}
+
 // Info fetches the company's sector + industry from Yahoo's quoteSummary
 // (assetProfile module) — a different endpoint from FetchBars/FastInfo, so it
 // costs its own limiter token. Empty strings are returned (not an error) when
