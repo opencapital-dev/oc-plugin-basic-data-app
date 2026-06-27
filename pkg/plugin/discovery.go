@@ -9,7 +9,7 @@ import (
 
 func StartDiscoveryLoop(
 	ctx context.Context, client rwPGClient,
-	app *App, state *BackfillState, liveSubs *LiveSubscriber,
+	app *App, state *BackfillState, liveSubs *QuotePoller,
 	pollSec int,
 ) context.CancelFunc {
 	if pollSec <= 0 {
@@ -68,7 +68,7 @@ func heldPairs(ctx context.Context, client rwPGClient) ([]heldPair, error) {
 
 func discoveryTick(
 	ctx context.Context, client rwPGClient,
-	app *App, state *BackfillState, liveSubs *LiveSubscriber,
+	app *App, state *BackfillState, liveSubs *QuotePoller,
 	seenMappingTs map[string]int64, seenSymbol map[string]string,
 	lastEnqueuedStart map[string]int64,
 ) {

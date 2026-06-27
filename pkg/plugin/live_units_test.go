@@ -1,19 +1,18 @@
 package plugin
 
 import (
+	"context"
 	"encoding/json"
 	"math"
 	"testing"
-
-	yfmodels "github.com/wnjoon/go-yfinance/pkg/models"
+	"time"
 )
 
-// The Yahoo live ws fills `currency` unreliably for LSE minor-unit listings
-// (arrives "USD"/empty while the price itself is in pence), and intermittently
-// flips a single symbol between pence (176) and pounds (1.76) tick to tick.
-// The live path must mirror the backfill classifier: prefer the authoritative
-// currency captured at backfill and decide minor/major per tick against a
-// reference price — never trust the ws currency field.
+// The Yahoo FastInfo currency is more reliable than the ws field but can still
+// return "USD"/empty for minor-unit LSE tickers whose price is actually in
+// pence. The poll path must mirror the backfill classifier: prefer the
+// authoritative currency captured at backfill and decide minor/major per poll
+// against a reference price — never trust the API currency field alone.
 
 func TestLiveUnitPrefersAuthoritativeCurrency(t *testing.T) {
 	cases := []struct {
@@ -96,8 +95,11 @@ func decodePayload(t *testing.T, call fakeCall) map[string]any {
 	return p
 }
 
-func liveSubWithTarget(fc *fakeClient, symbol string, tgt symbolTarget) *LiveSubscriber {
-	return &LiveSubscriber{
+// livePollerWithTarget constructs a QuotePoller wired to fc and yf,
+// pre-loaded with one symbol → target mapping for unit tests.
+func livePollerWithTarget(fc *fakeClient, yf quoteFetcher, symbol string, tgt symbolTarget) *QuotePoller {
+	return &QuotePoller{
+		yf:       yf,
 		client:   fc,
 		pluginID: "basic-data-app",
 		current:  map[string]struct{}{},
@@ -106,20 +108,20 @@ func liveSubWithTarget(fc *fakeClient, symbol string, tgt symbolTarget) *LiveSub
 	}
 }
 
-// Regression for the NAV-to-3M bug: a GKP pence tick (176) arrives tagged
-// currency=USD from the ws. With the authoritative GBp currency + reference
-// captured at backfill, the tick must be divided to 1.76 and stamped GBP.
-func TestPublishTickNormalizesPenceFromBadWsCurrency(t *testing.T) {
+// fixedNow is a stable poll time used in unit tests.
+var fixedNow = time.Date(2024, 12, 5, 8, 0, 0, 0, time.UTC)
+
+// Regression for the NAV-to-3M bug: a GKP pence price arrives tagged
+// currency=USD from the API. With the authoritative GBp currency + reference
+// captured at backfill, the price must be divided to major units (GBP).
+func TestPollTickNormalizesPenceFromBadApiCurrency(t *testing.T) {
 	const sym = "GKP.L"
 	fc := &fakeClient{}
-	sub := liveSubWithTarget(fc, sym, symbolTarget{
+	yf := &fakeFetcher{price: 176.9, currency: "USD"} // wrong/unreliable API currency
+	pol := livePollerWithTarget(fc, yf, sym, symbolTarget{
 		InstrumentID: "GKP", PortfolioID: "p", Currency: "GBp", RefPrice: 176.9,
 	})
-	sub.publishTick(&yfmodels.PricingData{
-		ID: sym, Time: 1_733_400_000_000,
-		Price: 176.9, Bid: 176.8, Ask: 177.0,
-		Currency: "USD", // wrong/unreliable ws currency
-	})
+	pol.pollOnce(context.Background(), fixedNow)
 	if len(fc.execCalls) != 1 {
 		t.Fatalf("want 1 insert, got %d", len(fc.execCalls))
 	}
@@ -127,30 +129,28 @@ func TestPublishTickNormalizesPenceFromBadWsCurrency(t *testing.T) {
 	if p["currency"] != "GBP" {
 		t.Errorf("currency = %v, want GBP", p["currency"])
 	}
-	if bid := p["bid_price"].(float64); math.Abs(bid-1.768) > 1e-6 {
-		t.Errorf("bid_price = %v, want ~1.768 (pence/100)", bid)
+	// 176.9 pence / 100 = 1.769 GBP
+	if mid := p["bid_price"].(float64); math.Abs(mid-1.769) > 1e-6 {
+		t.Errorf("bid_price = %v, want ~1.769 (pence/100)", mid)
 	}
-	if ask := p["ask_price"].(float64); math.Abs(ask-1.77) > 1e-6 {
-		t.Errorf("ask_price = %v, want ~1.77", ask)
+	if ask := p["ask_price"].(float64); math.Abs(ask-1.769) > 1e-6 {
+		t.Errorf("ask_price = %v, want ~1.769", ask)
 	}
 }
 
-// The same symbol intermittently sends an already-major pound tick (1.76 / GBP).
-// It must NOT be divided again into 0.0176.
-func TestPublishTickIntermittentPoundTickNotDivided(t *testing.T) {
+// The same symbol intermittently sends an already-major pound price (1.76 / GBP).
+// It must NOT be divided again into 0.01769.
+func TestPollTickIntermittentPoundPriceNotDivided(t *testing.T) {
 	const sym = "GKP.L"
 	fc := &fakeClient{}
-	sub := liveSubWithTarget(fc, sym, symbolTarget{
+	yf := &fakeFetcher{price: 1.762, currency: "GBP"}
+	pol := livePollerWithTarget(fc, yf, sym, symbolTarget{
 		InstrumentID: "GKP", PortfolioID: "p", Currency: "GBp", RefPrice: 176.9,
 	})
-	sub.publishTick(&yfmodels.PricingData{
-		ID: sym, Time: 1_733_400_000_000,
-		Price: 1.762, Bid: 1.761, Ask: 1.763,
-		Currency: "GBP",
-	})
+	pol.pollOnce(context.Background(), fixedNow)
 	p := decodePayload(t, fc.execCalls[0])
-	if bid := p["bid_price"].(float64); math.Abs(bid-1.761) > 1e-6 {
-		t.Errorf("bid_price = %v, want 1.761 (unchanged major tick)", bid)
+	if mid := p["bid_price"].(float64); math.Abs(mid-1.762) > 1e-6 {
+		t.Errorf("bid_price = %v, want 1.762 (unchanged major price)", mid)
 	}
 	if p["currency"] != "GBP" {
 		t.Errorf("currency = %v, want GBP", p["currency"])
@@ -158,18 +158,15 @@ func TestPublishTickIntermittentPoundTickNotDivided(t *testing.T) {
 }
 
 // A USD instrument with no canonical unit must pass through unchanged.
-func TestPublishTickUSDPassthrough(t *testing.T) {
+func TestPollTickUSDPassthrough(t *testing.T) {
 	const sym = "AAPL"
 	fc := &fakeClient{}
-	sub := liveSubWithTarget(fc, sym, symbolTarget{InstrumentID: "AAPL", PortfolioID: "p"})
-	sub.publishTick(&yfmodels.PricingData{
-		ID: sym, Time: 1_733_400_000_000,
-		Price: 150.0, Bid: 149.9, Ask: 150.1, Currency: "USD",
-	})
+	yf := &fakeFetcher{price: 150.0, currency: "USD"}
+	pol := livePollerWithTarget(fc, yf, sym, symbolTarget{InstrumentID: "AAPL", PortfolioID: "p"})
+	pol.pollOnce(context.Background(), fixedNow)
 	p := decodePayload(t, fc.execCalls[0])
-	// float32 ws fields → float64 carries ~1e-5 relative error; tolerate it.
-	if bid := p["bid_price"].(float64); math.Abs(bid-149.9) > 1e-3 {
-		t.Errorf("bid_price = %v, want 149.9", bid)
+	if mid := p["bid_price"].(float64); math.Abs(mid-150.0) > 1e-6 {
+		t.Errorf("bid_price = %v, want 150.0", mid)
 	}
 	if p["currency"] != "USD" {
 		t.Errorf("currency = %v, want USD", p["currency"])

@@ -44,7 +44,7 @@ type App struct {
 	stopBackfill   context.CancelFunc
 	stopDiscovery  context.CancelFunc
 	stopOptionPoll context.CancelFunc
-	live           *LiveSubscriber
+	live           *QuotePoller
 }
 
 func NewApp(_ context.Context, settings backend.AppInstanceSettings) (instancemgmt.Instance, error) {
@@ -192,11 +192,9 @@ func (a *App) ensureRuntime(ctx context.Context) {
 	runCtx := context.Background()
 
 	if a.options.LiveEnable {
-		live, err := NewLiveSubscriber(a.client, a.ticks, a.pluginID)
-		if err != nil {
-			log.DefaultLogger.Warn("basic-data-app: live ws init failed", "err", err)
-		} else if err := live.Start(context.Background()); err != nil {
-			log.DefaultLogger.Warn("basic-data-app: live ws start failed", "err", err)
+		live := NewQuotePoller(a.yf, a.client, a.ticks, a.pluginID)
+		if err := live.Start(context.Background()); err != nil {
+			log.DefaultLogger.Warn("basic-data-app: quote poller start failed", "err", err)
 		} else {
 			a.live = live
 		}
