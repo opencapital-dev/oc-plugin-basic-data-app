@@ -176,6 +176,19 @@ func TestPollTickDataLogInsert(t *testing.T) {
 	}
 }
 
+// TestPollTickZeroPriceSkipped verifies that when FetchQuote returns price == 0,
+// pollOnce performs no INSERT — mirroring backfill_worker.go's skip-on-zero guard.
+func TestPollTickZeroPriceSkipped(t *testing.T) {
+	const sym = "AAPL"
+	fc := &fakeClient{}
+	yf := &fakeFetcher{price: 0, currency: "USD"}
+	pol := livePollerWithTarget(fc, yf, sym, symbolTarget{InstrumentID: "AAPL", PortfolioID: "p"})
+	pol.pollOnce(context.Background(), fixedNow)
+	if len(fc.execCalls) != 0 {
+		t.Errorf("zero-price symbol must not produce an INSERT, got %d", len(fc.execCalls))
+	}
+}
+
 func TestCanonicalSymbol(t *testing.T) {
 	// No canonical → raw symbol.
 	if got := canonicalSymbol(TickerMapping{Symbol: "AET", VendorMeta: map[string]any{}}); got != "AET" {

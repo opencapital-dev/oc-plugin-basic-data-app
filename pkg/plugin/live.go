@@ -3,7 +3,6 @@ package plugin
 import (
 	"context"
 	"encoding/json"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -173,8 +172,6 @@ func (p *QuotePoller) SetSymbols(_ context.Context, mappings []TickerMapping) {
 	p.bySymbol = bySymbol
 	p.mu.Unlock()
 
-	sort.Strings(toAdd)
-	sort.Strings(toRemove)
 	if len(toAdd) > 0 {
 		log.DefaultLogger.Debug("quote poller: tracking new symbols", "symbols", toAdd)
 	}
@@ -201,6 +198,10 @@ func (p *QuotePoller) pollOnce(ctx context.Context, now time.Time) {
 		price, currency, err := p.yf.FetchQuote(ctx, sym)
 		if err != nil {
 			log.DefaultLogger.Warn("quote poller: FetchQuote failed", "symbol", sym, "err", err)
+			continue
+		}
+		if price <= 0 {
+			log.DefaultLogger.Debug("quote poller: zero price, skipping", "symbol", sym)
 			continue
 		}
 

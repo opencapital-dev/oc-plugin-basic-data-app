@@ -16,25 +16,25 @@ import (
 
 func TestLiveUnitPrefersAuthoritativeCurrency(t *testing.T) {
 	cases := []struct {
-		name    string
-		auth    string
-		ws      string
-		wantCur string
-		wantDiv float64
+		name        string
+		auth        string
+		apiCurrency string
+		wantCur     string
+		wantDiv     float64
 	}{
-		{"authoritative GBp beats ws USD", "GBp", "USD", "GBP", 100.0},
-		{"authoritative GBX beats empty ws", "GBX", "", "GBP", 100.0},
-		{"authoritative USD beats stray ws GBp", "USD", "GBp", "USD", 1.0},
-		{"no authoritative falls back to ws GBp", "", "GBp", "GBP", 100.0},
-		{"no authoritative, ws USD", "", "USD", "USD", 1.0},
+		{"authoritative GBp beats API USD", "GBp", "USD", "GBP", 100.0},
+		{"authoritative GBX beats empty API currency", "GBX", "", "GBP", 100.0},
+		{"authoritative USD beats stray API GBp", "USD", "GBp", "USD", 1.0},
+		{"no authoritative falls back to API GBp", "", "GBp", "GBP", 100.0},
+		{"no authoritative, API USD", "", "USD", "USD", 1.0},
 		{"both empty default USD", "", "", "USD", 1.0},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			cur, div := liveUnit(tc.auth, tc.ws)
+			cur, div := liveUnit(tc.auth, tc.apiCurrency)
 			if cur != tc.wantCur || div != tc.wantDiv {
 				t.Fatalf("liveUnit(%q,%q) = (%q,%v), want (%q,%v)",
-					tc.auth, tc.ws, cur, div, tc.wantCur, tc.wantDiv)
+					tc.auth, tc.apiCurrency, cur, div, tc.wantCur, tc.wantDiv)
 			}
 		})
 	}
