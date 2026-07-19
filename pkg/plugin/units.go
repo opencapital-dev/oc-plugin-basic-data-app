@@ -31,6 +31,33 @@ func normalizeMinorUnits(currency string) (string, float64) {
 	return currency, 1.0
 }
 
+// liveUnit resolves the (majorCurrency, divisor) for a live ws tick. It prefers
+// the authoritative currency captured at backfill (vendor_meta.canonical.currency)
+// over the ws-reported currency. Yahoo's pricing socket fills `currency`
+// unreliably for minor-unit listings — it arrives "USD"/empty for LSE tickers
+// whose price is actually in pence — so trusting it leaks unconverted pence and
+// inflates NAV ~100x. authCurrency == "" (no backfill resolved it yet) falls
+// back to the ws currency, matching the pre-existing behaviour.
+func liveUnit(authCurrency, wsCurrency string) (string, float64) {
+	if authCurrency != "" {
+		return normalizeMinorUnits(authCurrency)
+	}
+	return normalizeMinorUnits(wsCurrency)
+}
+
+// normalizeTickValue converts one raw ws price into major units. divisor > 1
+// only for minor-unit currencies; classifyBarUnit then decides per-tick whether
+// THIS value arrived already-major (Yahoo intermittently sends pounds on a
+// pence listing) or minor (pence). With no reference (reference <= 0) the
+// minor-unit default always divides — same fallback as the backfill bar path.
+// A non-positive value is returned untouched (caller fills bid/ask from mid).
+func normalizeTickValue(value, reference, divisor float64) float64 {
+	if value > 0 && divisor > 1.0 && classifyBarUnit(value, reference, divisor) == "minor" {
+		return value / divisor
+	}
+	return value
+}
+
 // classifyBarUnit picks between "minor" (divide by divisor) and "major"
 // (publish raw, Yahoo already pre-converted) for one bar. Mirrors
 // services/ingestor-yfinance/main.py::_classify_unit exactly.
