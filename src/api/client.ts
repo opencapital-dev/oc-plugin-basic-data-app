@@ -12,8 +12,14 @@ type RequestOptions = {
   body?: unknown;
 };
 
+export const RES_BASE = PLUGIN_RESOURCES;
+
 export async function yfRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   return request<T>(`${YF_BASE}${path}`, options);
+}
+
+export async function resRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  return request<T>(`${RES_BASE}${path}`, options);
 }
 
 async function request<T>(url: string, options: RequestOptions): Promise<T> {
