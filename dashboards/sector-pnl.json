@@ -23,8 +23,8 @@
         "y": 1
       },
       "libraryPanel": {
-        "uid": "yfinance-app-sector-pnl-barchart",
-        "name": "yfinance-app/sector-pnl-barchart"
+        "uid": "basic-data-app-sector-pnl-barchart",
+        "name": "basic-data-app/sector-pnl-barchart"
       }
     }
   ],
@@ -47,7 +47,7 @@
         },
         "query": {
           "refId": "V",
-          "source": "@bind(rows=\"portfolios{}\")\n@metric(output=\"table\")\ndef passthrough(rows):\n    return rows\n"
+          "source": "@bind(rows=pg(\"SELECT portfolio_id::text AS portfolio_id, COALESCE(attributes->>'name', portfolio_id::text) AS name FROM public.portfolios ORDER BY name\"))\n@metric(output=\"table\")\ndef passthrough(rows):\n    return rows\n"
         },
         "refresh": 1,
         "regex": "",
@@ -75,5 +75,5 @@
   },
   "timezone": "browser",
   "title": "Sector PnL",
-  "uid": "yfinance-sector-pnl"
+  "uid": "basic-data-sector-pnl"
 }
