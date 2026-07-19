@@ -89,7 +89,7 @@
         "type": "core-datasource",
         "uid": "core-datasource"
       },
-      "ref": "yfinance-app/sector_pnl"
+      "ref": "basic-data-app/sector_pnl"
     }
   ],
   "title": "Equity PnL by sector (${base_currency})",
