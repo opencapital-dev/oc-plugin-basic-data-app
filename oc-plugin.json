@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "pluginId": "basic-data-app",
+  "publisher": "OpenCapital",
+  "registry": {
+    "host": "ghcr.io",
+    "namespace": "opencapital-dev/plugins",
+    "publicURL": "https://ghcr.io"
+  },
+  "versions": [
+    "v0.3.0",
+    "v0.2.5",
+    "v0.2.4",
+    "v0.2.3",
+    "v0.2.2",
+    "v0.2.1",
+    "v0.2.0"
+  ]
+}
